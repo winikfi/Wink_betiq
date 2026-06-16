@@ -1,11 +1,11 @@
 import { useState, useEffect } from "react";
 
 const STORAGE_KEY = "bet_tracker_data";
-
-const initialBets = [];
+const SUPABASE_URL = "https://nactfzfejjmgiavlvtdm.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5hY3RmemZlamptZ2lhdmx2dGRtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE1NzY2NDQsImV4cCI6MjA5NzE1MjY0NH0.tUY-cRHWoKTWiCBBcCBuuUCBgP7fTx6VgMJ-9gMOHXM";
 
 const markets = ["1X2", "BTTS", "Over/Under", "Correct Score", "Handicap", "Bet Builder", "Both Teams Score", "Draw No Bet", "Other"];
-const leagues = ["Premier League", "La Liga", "Serie A", "Bundesliga", "Ligue 1", "MLS", "Champions League", "Europa League", "Other"];
+const leagues = ["Premier League", "La Liga", "Serie A", "Bundesliga", "Ligue 1", "MLS", "Champions League", "Europa League", "World Cup", "Other"];
 const statuses = ["Pending", "Won", "Lost", "Void"];
 
 function formatCurrency(amount) {
@@ -27,7 +27,7 @@ function getStatusColor(status) {
 
 export default function BetTracker() {
   const [bets, setBets] = useState([]);
-  const [view, setView] = useState("dashboard"); // dashboard | add | history | analyze
+  const [view, setView] = useState("dashboard");
   const [form, setForm] = useState({ match: "", league: "Premier League", market: "1X2", pick: "", odds: "", stake: "", status: "Pending", reasoning: "", date: new Date().toISOString().split("T")[0] });
   const [aiAnalysis, setAiAnalysis] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
@@ -115,18 +115,16 @@ Give a concise analysis covering:
 Be direct, specific, and honest. No fluff.`;
 
     try {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/analyze-bets`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-6",
-          max_tokens: 1000,
-          messages: [{ role: "user", content: prompt }]
-        })
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${SUPABASE_ANON_KEY}`
+        },
+        body: JSON.stringify({ prompt })
       });
       const data = await res.json();
-      const text = data.content?.map(c => c.text || "").join("\n") || "No response.";
-      setAiAnalysis(text);
+      setAiAnalysis(data.result || "No response received.");
     } catch (e) {
       setAiAnalysis("Error running analysis. Please try again.");
     }
@@ -137,7 +135,6 @@ Be direct, specific, and honest. No fluff.`;
 
   return (
     <div style={{ background: "#0a0e1a", minHeight: "100vh", color: "#e0e6f0", fontFamily: "'Inter', sans-serif", maxWidth: 480, margin: "0 auto" }}>
-      {/* Header */}
       <div style={{ background: "linear-gradient(135deg, #0d47a1, #1565c0)", padding: "20px 16px 16px", position: "sticky", top: 0, zIndex: 10 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div>
@@ -151,8 +148,6 @@ Be direct, specific, and honest. No fluff.`;
             <div style={{ fontSize: 11, color: "#90caf9" }}>Total P&L</div>
           </div>
         </div>
-
-        {/* Nav */}
         <div style={{ display: "flex", gap: 6, marginTop: 14 }}>
           {[["dashboard", "📊"], ["add", "➕"], ["history", "📋"], ["analyze", "🧠"]].map(([v, icon]) => (
             <button key={v} onClick={() => v === "analyze" ? runAIAnalysis() : setView(v)}
@@ -164,8 +159,6 @@ Be direct, specific, and honest. No fluff.`;
       </div>
 
       <div style={{ padding: 16 }}>
-
-        {/* DASHBOARD */}
         {view === "dashboard" && (
           <div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 }}>
@@ -183,7 +176,6 @@ Be direct, specific, and honest. No fluff.`;
                 </div>
               ))}
             </div>
-
             {bets.length === 0 && (
               <div style={{ textAlign: "center", padding: "40px 20px", color: "#64748b" }}>
                 <div style={{ fontSize: 48, marginBottom: 12 }}>📭</div>
@@ -191,7 +183,6 @@ Be direct, specific, and honest. No fluff.`;
                 <div style={{ fontSize: 13 }}>Tap ➕ to add your first bet and start building your edge</div>
               </div>
             )}
-
             {bets.filter(b => b.status === "Pending").length > 0 && (
               <div>
                 <div style={{ fontSize: 13, fontWeight: 700, color: "#64748b", marginBottom: 8, textTransform: "uppercase", letterSpacing: 1 }}>Live / Pending</div>
@@ -203,7 +194,6 @@ Be direct, specific, and honest. No fluff.`;
           </div>
         )}
 
-        {/* ADD BET */}
         {view === "add" && (
           <div>
             <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 16, color: "#90caf9" }}>{editId ? "✏️ Edit Bet" : "➕ Add New Bet"}</div>
@@ -217,7 +207,6 @@ Be direct, specific, and honest. No fluff.`;
                   style={{ width: "100%", background: "#111827", border: "1px solid #1e293b", borderRadius: 10, padding: "10px 12px", color: "#e0e6f0", fontSize: 14, boxSizing: "border-box" }} />
               </div>
             ))}
-
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
               <div>
                 <label style={{ fontSize: 12, color: "#64748b", display: "block", marginBottom: 4 }}>Odds *</label>
@@ -230,13 +219,11 @@ Be direct, specific, and honest. No fluff.`;
                   style={{ width: "100%", background: "#111827", border: "1px solid #1e293b", borderRadius: 10, padding: "10px 12px", color: "#e0e6f0", fontSize: 14, boxSizing: "border-box" }} />
               </div>
             </div>
-
             {form.odds && form.stake && (
               <div style={{ background: "#0d1f3c", borderRadius: 10, padding: "10px 12px", marginBottom: 12, fontSize: 13, color: "#90caf9" }}>
                 Potential return: <strong style={{ color: "#00e676" }}>{formatCurrency(calcReturn(form.stake, form.odds))}</strong> (profit: {formatCurrency(calcReturn(form.stake, form.odds) - form.stake)})
               </div>
             )}
-
             {[
               { label: "League", name: "league", options: leagues },
               { label: "Market", name: "market", options: markets },
@@ -250,19 +237,16 @@ Be direct, specific, and honest. No fluff.`;
                 </select>
               </div>
             ))}
-
             <div style={{ marginBottom: 12 }}>
               <label style={{ fontSize: 12, color: "#64748b", display: "block", marginBottom: 4 }}>Date</label>
               <input name="date" type="date" value={form.date} onChange={handleFormChange}
                 style={{ width: "100%", background: "#111827", border: "1px solid #1e293b", borderRadius: 10, padding: "10px 12px", color: "#e0e6f0", fontSize: 14, boxSizing: "border-box" }} />
             </div>
-
             <div style={{ marginBottom: 20 }}>
               <label style={{ fontSize: 12, color: "#64748b", display: "block", marginBottom: 4 }}>Reasoning (helps AI analysis)</label>
-              <textarea name="reasoning" value={form.reasoning} onChange={handleFormChange} placeholder="Why are you placing this bet? e.g. Home team strong form, opponent missing key striker..."
+              <textarea name="reasoning" value={form.reasoning} onChange={handleFormChange} placeholder="Why are you placing this bet?"
                 rows={3} style={{ width: "100%", background: "#111827", border: "1px solid #1e293b", borderRadius: 10, padding: "10px 12px", color: "#e0e6f0", fontSize: 14, boxSizing: "border-box", resize: "none" }} />
             </div>
-
             <button onClick={saveBet}
               style={{ width: "100%", padding: "14px", background: "linear-gradient(135deg, #0d47a1, #1565c0)", border: "none", borderRadius: 12, color: "#fff", fontSize: 15, fontWeight: 700, cursor: "pointer" }}>
               {editId ? "Update Bet" : "Save Bet"}
@@ -276,7 +260,6 @@ Be direct, specific, and honest. No fluff.`;
           </div>
         )}
 
-        {/* HISTORY */}
         {view === "history" && (
           <div>
             <div style={{ display: "flex", gap: 6, marginBottom: 14, flexWrap: "wrap" }}>
@@ -297,7 +280,6 @@ Be direct, specific, and honest. No fluff.`;
           </div>
         )}
 
-        {/* AI ANALYSIS */}
         {view === "analyze" && (
           <div>
             <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 16, color: "#90caf9" }}>🧠 AI Betting Analysis</div>
@@ -305,9 +287,6 @@ Be direct, specific, and honest. No fluff.`;
               <div style={{ textAlign: "center", padding: "60px 20px" }}>
                 <div style={{ fontSize: 40, marginBottom: 16 }}>🤖</div>
                 <div style={{ fontSize: 14, color: "#64748b" }}>Analyzing your betting patterns...</div>
-                <div style={{ marginTop: 20, height: 3, background: "#1e293b", borderRadius: 3, overflow: "hidden" }}>
-                  <div style={{ height: "100%", width: "60%", background: "linear-gradient(90deg, #0d47a1, #00e676)", borderRadius: 3, animation: "none" }} />
-                </div>
               </div>
             ) : aiAnalysis ? (
               <div style={{ background: "#111827", borderRadius: 14, padding: 16 }}>
@@ -358,7 +337,6 @@ function BetCard({ bet, onEdit, onDelete, onStatus }) {
           <span>📈 @{bet.odds}</span>
         </div>
       </div>
-
       {expanded && (
         <div style={{ borderTop: "1px solid #1e293b", padding: "12px 14px" }}>
           {bet.reasoning && (
@@ -369,7 +347,6 @@ function BetCard({ bet, onEdit, onDelete, onStatus }) {
           <div style={{ fontSize: 12, color: "#64748b", marginBottom: 12 }}>
             Potential return: <strong style={{ color: "#e0e6f0" }}>${potReturn.toFixed(2)}</strong> · Stake: <strong style={{ color: "#e0e6f0" }}>${parseFloat(bet.stake).toFixed(2)}</strong>
           </div>
-
           {bet.status === "Pending" && (
             <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
               {["Won", "Lost", "Void"].map(s => (
@@ -380,7 +357,6 @@ function BetCard({ bet, onEdit, onDelete, onStatus }) {
               ))}
             </div>
           )}
-
           <div style={{ display: "flex", gap: 8 }}>
             <button onClick={() => onEdit(bet)}
               style={{ flex: 1, padding: "8px", background: "#0d1f3c", border: "1px solid #1565c0", borderRadius: 8, color: "#90caf9", fontSize: 12, cursor: "pointer" }}>
