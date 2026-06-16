@@ -1,2 +1,2 @@
-# Wink_betiq
+# Winik_betiq
 This is for your betting analysis 
