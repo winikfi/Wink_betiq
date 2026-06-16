@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 
 const STORAGE_KEY = "bet_tracker_data";
+const PREDICTIONS_KEY = "bet_predictions_cache";
 const SUPABASE_URL = "https://nactfzfejjmgiavlvtdm.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5hY3RmemZlamptZ2lhdmx2dGRtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE1NzY2NDQsImV4cCI6MjA5NzE1MjY0NH0.tUY-cRHWoKTWiCBBcCBuuUCBgP7fTx6VgMJ-9gMOHXM";
 
@@ -11,11 +12,9 @@ const statuses = ["Pending", "Won", "Lost", "Void"];
 function formatCurrency(amount) {
   return `$${parseFloat(amount || 0).toFixed(2)}`;
 }
-
 function calcReturn(stake, odds) {
   return parseFloat(stake || 0) * parseFloat(odds || 1);
 }
-
 function getStatusColor(status) {
   switch (status) {
     case "Won": return "#00e676";
@@ -23,6 +22,19 @@ function getStatusColor(status) {
     case "Void": return "#ffab00";
     default: return "#90caf9";
   }
+}
+
+async function callAI(prompt) {
+  const res = await fetch(`${SUPABASE_URL}/functions/v1/analyze-bets`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${SUPABASE_ANON_KEY}`
+    },
+    body: JSON.stringify({ prompt })
+  });
+  const data = await res.json();
+  return data.result || "";
 }
 
 export default function BetTracker() {
@@ -33,10 +45,19 @@ export default function BetTracker() {
   const [aiLoading, setAiLoading] = useState(false);
   const [filterStatus, setFilterStatus] = useState("All");
   const [editId, setEditId] = useState(null);
+  const [predictions, setPredictions] = useState(null);
+  const [predLoading, setPredLoading] = useState(false);
+  const [predDate, setPredDate] = useState("");
 
   useEffect(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) setBets(JSON.parse(saved));
+    const cached = localStorage.getItem(PREDICTIONS_KEY);
+    if (cached) {
+      const { date, data } = JSON.parse(cached);
+      const today = new Date().toDateString();
+      if (date === today) { setPredictions(data); setPredDate(date); }
+    }
   }, []);
 
   useEffect(() => {
@@ -89,46 +110,84 @@ export default function BetTracker() {
     setAiLoading(true);
     setAiAnalysis("");
     setView("analyze");
-
     const summary = bets.map(b =>
       `${b.date} | ${b.match} (${b.league}) | ${b.market}: ${b.pick} @ ${b.odds} | Stake: $${b.stake} | ${b.status}${b.reasoning ? ` | Reasoning: ${b.reasoning}` : ""}`
     ).join("\n");
-
-    const prompt = `You are a professional sports betting analyst. Analyze this bettor's history and give sharp, actionable feedback.
-
-BET HISTORY:
-${summary || "No bets yet."}
-
-STATS:
-- Win Rate: ${stats.winRate}%
-- ROI: ${stats.roi}%
-- Total Profit/Loss: $${stats.profit.toFixed(2)}
-- Total Bets Settled: ${stats.settled}
-
-Give a concise analysis covering:
-1. Strengths (what markets/leagues they're profitable in)
-2. Weaknesses (where they're losing money)
-3. Betting patterns (chasing losses, poor value, etc.)
-4. 3 specific actionable tips to improve their ROI
-5. Overall grade (A-F) with one sentence verdict
-
-Be direct, specific, and honest. No fluff.`;
-
+    const prompt = `You are a professional sports betting analyst. Analyze this bettor's history and give sharp, actionable feedback.\n\nBET HISTORY:\n${summary || "No bets yet."}\n\nSTATS:\n- Win Rate: ${stats.winRate}%\n- ROI: ${stats.roi}%\n- Total Profit/Loss: $${stats.profit.toFixed(2)}\n- Total Bets Settled: ${stats.settled}\n\nGive a concise analysis covering:\n1. Strengths (what markets/leagues they're profitable in)\n2. Weaknesses (where they're losing money)\n3. Betting patterns (chasing losses, poor value, etc.)\n4. 3 specific actionable tips to improve their ROI\n5. Overall grade (A-F) with one sentence verdict\n\nBe direct, specific, and honest. No fluff.`;
     try {
-      const res = await fetch(`${SUPABASE_URL}/functions/v1/analyze-bets`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${SUPABASE_ANON_KEY}`
-        },
-        body: JSON.stringify({ prompt })
-      });
-      const data = await res.json();
-      setAiAnalysis(data.result || "No response received.");
+      const result = await callAI(prompt);
+      setAiAnalysis(result || "No response received.");
     } catch (e) {
       setAiAnalysis("Error running analysis. Please try again.");
     }
     setAiLoading(false);
+  }
+
+  async function getPredictions(refresh = false) {
+    setPredLoading(true);
+    setView("predict");
+    const today = new Date().toDateString();
+    if (!refresh && predictions && predDate === today) { setPredLoading(false); return; }
+    const todayStr = new Date().toLocaleDateString("en-GB", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+    const prompt = `You are an expert football betting analyst. Today is ${todayStr}.
+
+Generate exactly 3 high-confidence football betting predictions for today. These should be real matches likely being played today across any league worldwide (Premier League, La Liga, Serie A, Bundesliga, Champions League, World Cup, MLS, etc).
+
+For each prediction respond in this EXACT format:
+---
+MATCH: [Home Team] vs [Away Team]
+LEAGUE: [League Name]
+PICK: [Your betting pick]
+ODDS: [Estimated odds e.g. 1.75]
+CONFIDENCE: [High/Medium]
+REASONING: [2-3 sentences explaining why]
+---
+
+Make sure combined odds across all 3 picks equals at least 3.0 (so it qualifies as a 3-odd accumulator).
+Focus on value picks, not just favourites. Be specific and analytical.`;
+    try {
+      const result = await callAI(prompt);
+      const parsed = parsePredictions(result);
+      setPredictions(parsed);
+      setPredDate(today);
+      localStorage.setItem(PREDICTIONS_KEY, JSON.stringify({ date: today, data: parsed }));
+    } catch (e) {
+      setPredictions([{ error: "Could not load predictions. Try again." }]);
+    }
+    setPredLoading(false);
+  }
+
+  function parsePredictions(text) {
+    const blocks = text.split("---").filter(b => b.trim().length > 20);
+    return blocks.map(block => {
+      const get = (key) => {
+        const match = block.match(new RegExp(`${key}:\\s*(.+)`));
+        return match ? match[1].trim() : "";
+      };
+      return {
+        match: get("MATCH"),
+        league: get("LEAGUE"),
+        pick: get("PICK"),
+        odds: get("ODDS"),
+        confidence: get("CONFIDENCE"),
+        reasoning: get("REASONING"),
+      };
+    }).filter(p => p.match);
+  }
+
+  function addPredictionAsBet(pred) {
+    setForm({
+      match: pred.match,
+      league: pred.league || "Other",
+      market: "1X2",
+      pick: pred.pick,
+      odds: pred.odds.replace(/[^0-9.]/g, ""),
+      stake: "",
+      status: "Pending",
+      reasoning: pred.reasoning,
+      date: new Date().toISOString().split("T")[0]
+    });
+    setView("add");
   }
 
   const filteredBets = filterStatus === "All" ? bets : bets.filter(b => b.status === filterStatus);
@@ -148,10 +207,14 @@ Be direct, specific, and honest. No fluff.`;
             <div style={{ fontSize: 11, color: "#90caf9" }}>Total P&L</div>
           </div>
         </div>
-        <div style={{ display: "flex", gap: 6, marginTop: 14 }}>
-          {[["dashboard", "📊"], ["add", "➕"], ["history", "📋"], ["analyze", "🧠"]].map(([v, icon]) => (
-            <button key={v} onClick={() => v === "analyze" ? runAIAnalysis() : setView(v)}
-              style={{ flex: 1, padding: "8px 4px", background: view === v ? "rgba(255,255,255,0.2)" : "rgba(255,255,255,0.07)", border: "none", borderRadius: 10, color: "#fff", fontSize: 18, cursor: "pointer", fontWeight: view === v ? 700 : 400 }}>
+        <div style={{ display: "flex", gap: 5, marginTop: 14 }}>
+          {[["dashboard", "📊"], ["predict", "🎯"], ["add", "➕"], ["history", "📋"], ["analyze", "🧠"]].map(([v, icon]) => (
+            <button key={v} onClick={() => {
+              if (v === "analyze") runAIAnalysis();
+              else if (v === "predict") getPredictions();
+              else setView(v);
+            }}
+              style={{ flex: 1, padding: "8px 2px", background: view === v ? "rgba(255,255,255,0.2)" : "rgba(255,255,255,0.07)", border: "none", borderRadius: 10, color: "#fff", fontSize: 16, cursor: "pointer", fontWeight: view === v ? 700 : 400 }}>
               {icon}
             </button>
           ))}
@@ -159,6 +222,8 @@ Be direct, specific, and honest. No fluff.`;
       </div>
 
       <div style={{ padding: 16 }}>
+
+        {/* DASHBOARD */}
         {view === "dashboard" && (
           <div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 }}>
@@ -180,7 +245,7 @@ Be direct, specific, and honest. No fluff.`;
               <div style={{ textAlign: "center", padding: "40px 20px", color: "#64748b" }}>
                 <div style={{ fontSize: 48, marginBottom: 12 }}>📭</div>
                 <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 6 }}>No bets tracked yet</div>
-                <div style={{ fontSize: 13 }}>Tap ➕ to add your first bet and start building your edge</div>
+                <div style={{ fontSize: 13 }}>Tap ➕ to add your first bet or 🎯 for today's predictions</div>
               </div>
             )}
             {bets.filter(b => b.status === "Pending").length > 0 && (
@@ -194,6 +259,65 @@ Be direct, specific, and honest. No fluff.`;
           </div>
         )}
 
+        {/* PREDICTIONS */}
+        {view === "predict" && (
+          <div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+              <div style={{ fontSize: 16, fontWeight: 700, color: "#90caf9" }}>🎯 Today's Predictions</div>
+              <button onClick={() => getPredictions(true)}
+                style={{ padding: "6px 12px", background: "#0d47a1", border: "none", borderRadius: 8, color: "#fff", fontSize: 12, cursor: "pointer" }}>
+                🔄 Refresh
+              </button>
+            </div>
+            {predLoading ? (
+              <div style={{ textAlign: "center", padding: "60px 20px" }}>
+                <div style={{ fontSize: 40, marginBottom: 16 }}>🤖</div>
+                <div style={{ fontSize: 14, color: "#64748b" }}>Generating today's predictions...</div>
+              </div>
+            ) : predictions && predictions.length > 0 ? (
+              <div>
+                <div style={{ background: "#0d1f3c", borderRadius: 12, padding: "10px 14px", marginBottom: 14, fontSize: 12, color: "#90caf9" }}>
+                  💡 Tap <strong>"Add to Tracker"</strong> on any prediction to log it as a bet
+                </div>
+                {predictions.map((pred, i) => pred.error ? (
+                  <div key={i} style={{ background: "#111827", borderRadius: 14, padding: 16, color: "#ff1744" }}>{pred.error}</div>
+                ) : (
+                  <div key={i} style={{ background: "#111827", borderRadius: 14, marginBottom: 12, overflow: "hidden", border: "1px solid #1e293b" }}>
+                    <div style={{ padding: "12px 14px" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 2 }}>{pred.match}</div>
+                          <div style={{ fontSize: 11, color: "#64748b" }}>🏆 {pred.league}</div>
+                        </div>
+                        <div style={{ textAlign: "right" }}>
+                          <div style={{ fontSize: 18, fontWeight: 800, color: "#00e676" }}>@{pred.odds}</div>
+                          <div style={{ fontSize: 10, padding: "2px 6px", borderRadius: 10, background: pred.confidence === "High" ? "#00391a" : "#1a1200", color: pred.confidence === "High" ? "#00e676" : "#ffab00", display: "inline-block" }}>
+                            {pred.confidence}
+                          </div>
+                        </div>
+                      </div>
+                      <div style={{ background: "#0a0e1a", borderRadius: 8, padding: "8px 10px", marginBottom: 10 }}>
+                        <div style={{ fontSize: 12, color: "#90caf9", fontWeight: 600, marginBottom: 3 }}>Pick: {pred.pick}</div>
+                        <div style={{ fontSize: 11, color: "#64748b", lineHeight: 1.5 }}>{pred.reasoning}</div>
+                      </div>
+                      <button onClick={() => addPredictionAsBet(pred)}
+                        style={{ width: "100%", padding: "10px", background: "linear-gradient(135deg, #0d47a1, #1565c0)", border: "none", borderRadius: 10, color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+                        ➕ Add to Tracker
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ textAlign: "center", padding: "40px 20px", color: "#64748b" }}>
+                <div style={{ fontSize: 48, marginBottom: 12 }}>🎯</div>
+                <div>Tap 🎯 to get today's predictions</div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ADD BET */}
         {view === "add" && (
           <div>
             <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 16, color: "#90caf9" }}>{editId ? "✏️ Edit Bet" : "➕ Add New Bet"}</div>
@@ -260,6 +384,7 @@ Be direct, specific, and honest. No fluff.`;
           </div>
         )}
 
+        {/* HISTORY */}
         {view === "history" && (
           <div>
             <div style={{ display: "flex", gap: 6, marginBottom: 14, flexWrap: "wrap" }}>
@@ -280,6 +405,7 @@ Be direct, specific, and honest. No fluff.`;
           </div>
         )}
 
+        {/* AI ANALYSIS */}
         {view === "analyze" && (
           <div>
             <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 16, color: "#90caf9" }}>🧠 AI Betting Analysis</div>
@@ -313,7 +439,6 @@ function BetCard({ bet, onEdit, onDelete, onStatus }) {
   const [expanded, setExpanded] = useState(false);
   const potReturn = calcReturn(bet.stake, bet.odds);
   const profit = potReturn - parseFloat(bet.stake || 0);
-
   return (
     <div style={{ background: "#111827", borderRadius: 14, marginBottom: 10, overflow: "hidden", border: `1px solid ${bet.status === "Won" ? "#00391a" : bet.status === "Lost" ? "#3d0007" : "#1e293b"}` }}>
       <div onClick={() => setExpanded(e => !e)} style={{ padding: "12px 14px", cursor: "pointer" }}>
