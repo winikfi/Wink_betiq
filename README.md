@@ -1,2 +1,2 @@
 # Wink_betiq
-This is not for your betting analysis 
+This is for your betting analysis 
