@@ -24,14 +24,15 @@ function getStatusColor(status) {
   }
 }
 
-async function callAI(prompt) {
+async function callAI(prompt, type = "analysis") {
+") {
   const res = await fetch(`${SUPABASE_URL}/functions/v1/analyze-bets`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       "Authorization": `Bearer ${SUPABASE_ANON_KEY}`
     },
-    body: JSON.stringify({ prompt })
+    body: JSON.stringify({ prompt, type })
   });
   const data = await res.json();
   return data.result || "";
@@ -146,7 +147,7 @@ REASONING: [2-3 sentences explaining why]
 Make sure combined odds across all 3 picks equals at least 3.0 (so it qualifies as a 3-odd accumulator).
 Focus on value picks, not just favourites. Be specific and analytical.`;
     try {
-      const result = await callAI(prompt);
+     const result = await callAI(prompt, "predictions");
       const parsed = parsePredictions(result);
       setPredictions(parsed);
       setPredDate(today);
