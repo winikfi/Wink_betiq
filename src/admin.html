@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BetIQ Admin</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #0a0e1a; color: #e0e6f0; font-family: Inter, sans-serif; padding: 20px; max-width: 480px; margin: 0 auto; }
+    h1 { color: #90caf9; margin-bottom: 20px; font-size: 20px; }
+    .card { background: #111827; border-radius: 14px; padding: 16px; margin-bottom: 16px; }
+    label { font-size: 12px; color: #64748b; display: block; margin-bottom: 4px; }
+    input, select, textarea { width: 100%; background: #0a0e1a; border: 1px solid #1e293b; border-radius: 10px; padding: 10px 12px; color: #e0e6f0; font-size: 14px; margin-bottom: 12px; }
+    textarea { resize: none; height: 80px; }
+    button { width: 100%; padding: 14px; background: linear-gradient(135deg, #0d47a1, #1565c0); border: none; border-radius: 12px; color: #fff; font-size: 15px; font-weight: 700; cursor: pointer; margin-bottom: 10px; }
+    .success { color: #00e676; text-align: center; padding: 10px; display: none; }
+    .error { color: #ff1744; text-align: center; padding: 10px; display: none; }
+    .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px; }
+    .stat { background: #111827; border-radius: 14px; padding: 14px; text-align: center; }
+    .stat-value { font-size: 28px; font-weight: 800; color: #00e676; }
+    .stat-label { font-size: 12px; color: #64748b; margin-top: 4px; }
+    .login { background: #111827; border-radius: 14px; padding: 20px; }
+    h2 { color: #90caf9; margin-bottom: 12px; font-size: 16px; }
+    .pred-count { font-size: 12px; color: #64748b; margin-bottom: 16px; }
+  </style>
+</head>
+<body>
+
+<h1>⚽ BetIQ Admin</h1>
+
+<div id="loginBox" class="login">
+  <h2>🔐 Login</h2>
+  <label>Password</label>
+  <input type="password" id="password" placeholder="Enter admin password" />
+  <button onclick="login()">Login</button>
+  <div id="loginError" class="error">Wrong password!</div>
+</div>
+
+<div id="adminPanel" style="display:none">
+  <div class="stats">
+    <div class="stat">
+      <div class="stat-value" id="userCount">...</div>
+      <div class="stat-label">Total Users</div>
+    </div>
+    <div class="stat">
+      <div class="stat-value" id="predCount">...</div>
+      <div class="stat-label">Today's Picks</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>📅 Upload Today's Predictions</h2>
+    <p class="pred-count">Add up to 3 predictions for today</p>
+
+    <div id="predForms">
+      <div class="pred-form">
+        <label>Match 1</label>
+        <input type="text" placeholder="e.g. Arsenal vs Chelsea" class="match" />
+        <label>League</label>
+        <input type="text" placeholder="e.g. Premier League" class="league" />
+        <label>Pick</label>
+        <input type="text" placeholder="e.g. Arsenal Win" class="pick" />
+        <label>Odds</label>
+        <input type="text" placeholder="e.g. 1.85" class="odds" />
+        <label>Confidence</label>
+        <select class="confidence">
+          <option>High</option>
+          <option>Medium</option>
+        </select>
+        <label>Reasoning</label>
+        <textarea class="reasoning" placeholder="Why this pick?"></textarea>
+      </div>
+
+      <div class="pred-form">
+        <label>Match 2</label>
+        <input type="text" placeholder="e.g. Real Madrid vs Barcelona" class="match" />
+        <label>League</label>
+        <input type="text" placeholder="e.g. La Liga" class="league" />
+        <label>Pick</label>
+        <input type="text" placeholder="e.g. Over 2.5 Goals" class="pick" />
+        <label>Odds</label>
+        <input type="text" placeholder="e.g. 1.75" class="odds" />
+        <label>Confidence</label>
+        <select class="confidence">
+          <option>High</option>
+          <option>Medium</option>
+        </select>
+        <label>Reasoning</label>
+        <textarea class="reasoning" placeholder="Why this pick?"></textarea>
+      </div>
+
+      <div class="pred-form">
+        <label>Match 3</label>
+        <input type="text" placeholder="e.g. PSG vs Lyon" class="match" />
+        <label>League</label>
+        <input type="text" placeholder="e.g. Ligue 1" class="league" />
+        <label>Pick</label>
+        <input type="text" placeholder="e.g. BTTS" class="pick" />
+        <label>Odds</label>
+        <input type="text" placeholder="e.g. 1.90" class="odds" />
+        <label>Confidence</label>
+        <select class="confidence">
+          <option>High</option>
+          <option>Medium</option>
+        </select>
+        <label>Reasoning</label>
+        <textarea class="reasoning" placeholder="Why this pick?"></textarea>
+      </div>
+    </div>
+
+    <button onclick="uploadPredictions()">🚀 Upload Predictions</button>
+    <div id="success" class="success">✅ Predictions uploaded successfully!</div>
+    <div id="error" class="error">❌ Error uploading. Try again.</div>
+  </div>
+</div>
+
+<script>
+  const SUPABASE_URL = "https://nactfzfejjmgiavlvtdm.supabase.co";
+  const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5hY3RmemZlamptZ2lhdmx2dGRtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE1NzY2NDQsImV4cCI6MjA5NzE1MjY0NH0.tUY-cRHWoKTWiCBBcCBuuUCBgP7fTx6VgMJ-9gMOHXM";
+  const ADMIN_PASSWORD = "winik2024";
+
+  function login() {
+    const pwd = document.getElementById("password").value;
+    if (pwd === ADMIN_PASSWORD) {
+      document.getElementById("loginBox").style.display = "none";
+      document.getElementById("adminPanel").style.display = "block";
+      loadStats();
+    } else {
+      document.getElementById("loginError").style.display = "block";
+    }
+  }
+
+  async function loadStats() {
+    try {
+      const usersRes = await fetch(`${SUPABASE_URL}/rest/v1/users?select=count`, {
+        headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}`, "Prefer": "count=exact" }
+      });
+      const count = usersRes.headers.get("content-range")?.split("/")[1] || "0";
+      document.getElementById("userCount").textContent = count;
+
+      const today = new Date().toISOString().split("T")[0];
+      const predRes = await fetch(`${SUPABASE_URL}/rest/v1/predictions?date=eq.${today}&select=id`, {
+        headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}`, "Prefer": "count=exact" }
+      });
+      const predCount = predRes.headers.get("content-range")?.split("/")[1] || "0";
+      document.getElementById("predCount").textContent = predCount;
+    } catch(e) {
+      document.getElementById("userCount").textContent = "N/A";
+    }
+  }
+
+  async function uploadPredictions() {
+    const forms = document.querySelectorAll(".pred-form");
+    const today = new Date().toISOString().split("T")[0];
+    const predictions = [];
+
+    forms.forEach(form => {
+      const match = form.querySelector(".match").value.trim();
+      const league = form.querySelector(".league").value.trim();
+      const pick = form.querySelector(".pick").value.trim();
+      const odds = form.querySelector(".odds").value.trim();
+      const confidence = form.querySelector(".confidence").value;
+      const reasoning = form.querySelector(".reasoning").value.trim();
+      if (match && pick && odds) {
+        predictions.push({ date: today, match, league, pick, odds, confidence, reasoning });
+      }
+    });
+
+    if (predictions.length === 0) {
+      alert("Fill in at least 1 prediction!");
+      return;
+    }
+
+    try {
+      await fetch(`${SUPABASE_URL}/rest/v1/predictions?date=eq.${today}`, {
+        method: "DELETE",
+        headers: { "apikey": SUPABASE_KEY, "Authorization": `Bearer ${SUPABASE_KEY}` }
+      });
+
+      const res = await fetch(`${SUPABASE_URL}/rest/v1/predictions`, {
+        method: "POST",
+        headers: {
+          "apikey": SUPABASE_KEY,
+          "Authorization": `Bearer ${SUPABASE_KEY}`,
+          "Content-Type": "application/json",
+          "Prefer": "return=minimal"
+        },
+        body: JSON.stringify(predictions)
+      });
+
+      if (res.ok) {
+        document.getElementById("success").style.display = "block";
+        document.getElementById("error").style.display = "none";
+        loadStats();
+      } else {
+        throw new Error("Failed");
+      }
+    } catch(e) {
+      document.getElementById("error").style.display = "block";
+      document.getElementById("success").style.display = "none";
+    }
+  }
+</script>
+</body>
+</html>
